@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ミクのバーチャルリフティングステージ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&family=Noto+Sans+JP:wght@500;700;900&display=swap');
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #07131a;
+      color: #f0fdfa;
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+    }
+
+    #stage-shell {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 20%, #103642 0%, #091b24 62%, #050d12 100%);
+      overflow: hidden;
+    }
+
+    #canvas-box {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1280px;
+      max-height: 760px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas#liftingCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(57, 197, 187, 0.22);
+      background: #081922;
+      touch-action: none;
+    }
+
+    @media (max-width: 768px) {
+      canvas#liftingCanvas {
+        border-radius: 0;
+      }
+    }
+
+    .glass-hud {
+      background: rgba(8, 25, 34, 0.76);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(57, 197, 187, 0.25);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .ctrl-btn {
+      background: rgba(10, 34, 46, 0.78);
+      border: 1.5px solid rgba(57, 197, 187, 0.35);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+      transition: transform 0.07s ease, background-color 0.07s ease, border-color 0.07s ease;
+      touch-action: none;
+    }
+
+    .ctrl-btn:active,
+    .ctrl-btn.active {
+      transform: scale(0.93);
+      background: rgba(57, 197, 187, 0.42);
+      border-color: #99f6e4;
+    }
+
+    .ctrl-btn-high:active,
+    .ctrl-btn-high.active {
+      background: rgba(244, 114, 182, 0.45);
+      border-color: #fbcfe8;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage-shell">
+    <div id="canvas-box">
+      <canvas id="liftingCanvas"></canvas>
+
+      <!-- 上部HUD -->
+      <div class="pointer-events-none absolute top-2 left-2 right-2 sm:top-4 sm:left-4 sm:right-4 flex items-start justify-between gap-2 z-20">
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
+          <div class="glass-hud rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2">
+            <div class="text-[10px] text-teal-200/80 leading-none">リフティング回数</div>
+            <div id="hud-lifts" class="text-sm sm:text-lg font-black tabular-nums text-[#39C5BB]">0</div>
+          </div>
+
+          <div class="glass-hud rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2">
+            <div class="text-[10px] text-amber-200/80 leading-none">ベストスコア</div>
+            <div id="hud-best" class="text-sm sm:text-lg font-black tabular-nums text-amber-300">0</div>
+          </div>
+
+          <div class="glass-hud rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2">
+            <div class="text-[10px] text-pink-200/80 leading-none">コンボ</div>
+            <div id="hud-combo" class="text-sm sm:text-lg font-black tabular-nums text-pink-300">0</div>
+          </div>
+
+          <div class="glass-hud rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2">
+            <div class="text-[10px] text-cyan-200/80 leading-none">スコア</div>
+            <div id="hud-score" class="text-sm sm:text-lg font-black tabular-nums text-white">0</div>
+          </div>
+        </div>
+
+        <div class="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+          <button id="btn-mute" type="button" class="glass-hud rounded-xl px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-teal-100 hover:border-teal-300/70 transition cursor-pointer">
+            ♪ 音: ON
+          </button>
+          <button id="btn-quick-reset" type="button" class="glass-hud rounded-xl px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-rose-200 hover:border-rose-300/70 transition cursor-pointer">
+            R: リセット
+          </button>
+        </div>
+      </div>
+
+      <!-- フィーバーゲージ（上部中央） -->
+      <div class="pointer-events-none hidden sm:flex absolute top-4 left-1/2 -translate-x-1/2 z-20 w-52 md:w-64 flex-col items-center">
+        <div class="flex items-center justify-between w-full text-[10px] font-bold tracking-wider mb-1">
+          <span id="fever-label" class="text-teal-200">FEVER GAUGE</span>
+          <span id="mult-label" class="text-amber-300">x1.0</span>
+        </div>
+        <div class="w-full h-2.5 rounded-full bg-slate-950/80 border border-teal-400/30 overflow-hidden p-[1px]">
+          <div id="fever-bar" class="h-full rounded-full bg-gradient-to-r from-[#39C5BB] via-cyan-300 to-pink-400 transition-all duration-100" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- スタート画面 -->
+      <div id="overlay-start" class="absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+        <div class="max-w-xl w-full rounded-2xl bg-gradient-to-b from-[#0f2e3b]/95 to-[#081720]/95 border border-[#39C5BB]/40 p-5 sm:p-7 shadow-2xl text-center">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#39C5BB]/15 border border-[#39C5BB]/35 text-teal-200 text-xs font-bold mb-3">
+            <span>⚽ VIRTUAL SOCCER LIFTING</span>
+            <span>・</span>
+            <span>01 STAGE</span>
+          </div>
+          <h1 class="text-2xl sm:text-4xl font-black tracking-tight text-white mb-2">
+            ミクの<span class="text-[#39C5BB]">バーチャル</span>リフティング
+          </h1>
+          <p class="text-xs sm:text-sm text-teal-100/85 leading-relaxed mb-4">
+            バーチャルステージの上でサッカーボールを地面に落とさず連続リフティング！スイートスポットや多彩なリフト技、ネギボーナスをつないでハイスコアを目指しましょう。
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left text-xs bg-black/35 rounded-xl p-3.5 border border-white/10 mb-5">
+            <div><span class="text-[#39C5BB] font-bold">移動:</span> A / D または ← / →（画面ドラッグも可）</div>
+            <div><span class="text-cyan-300 font-bold">通常リフト:</span> Space / Z / J / W / ↑ / クリック・タップ</div>
+            <div><span class="text-pink-300 font-bold">ハイ／ヘッドリフト:</span> Shift / X / K（高弾道・高得点）</div>
+            <div><span class="text-amber-300 font-bold">コンボ＆FEVER:</span> 連続ヒット＆スイートスポットで倍率UP</div>
+          </div>
+
+          <button id="btn-start" type="button" class="w-full sm:w-auto px-8 py-3 rounded-xl bg-gradient-to-r from-[#137A7F] via-[#39C5BB] to-cyan-400 hover:brightness-110 active:scale-[0.98] text-slate-950 font-black text-sm sm:text-base shadow-lg shadow-teal-950/70 transition cursor-pointer">
+            ステージスタート（Enter / Space）
+          </button>
+        </div>
+      </div>
+
+      <!-- ゲームオーバー画面 -->
+      <div id="overlay-gameover" class="hidden absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
+        <div class="max-w-md w-full rounded-2xl bg-gradient-to-b from-[#102e3b]/95 to-[#07151d]/95 border border-rose-400/35 p-6 text-center shadow-2xl">
+          <div class="inline-block px-3 py-1 rounded-full text-xs font-bold mb-2 bg-rose-500/20 text-rose-200 border border-rose-400/30">
+            BALL DROPPED
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-black text-white mb-1">リフティング終了！</h2>
+          <p id="over-message" class="text-xs sm:text-sm text-teal-100/80 mb-4">
+            ボールがピッチに触れました。次のステージでもリズムをつかみましょう！
+          </p>
+
+          <div class="bg-black/35 rounded-xl p-3.5 border border-white/10 mb-5 space-y-2 text-xs sm:text-sm">
+            <div class="flex justify-between">
+              <span class="text-slate-300">今回のリフティング回数</span>
+              <span id="over-lifts" class="font-black text-[#39C5BB] tabular-nums">0 回</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-300">最大コンボ</span>
+              <span id="over-maxcombo" class="font-black text-pink-300 tabular-nums">0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-300">今回のスコア</span>
+              <span id="over-score" class="font-black text-white tabular-nums">0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-300">ベストスコア</span>
+              <span id="over-best" class="font-black text-amber-300 tabular-nums">0</span>
+            </div>
+          </div>
+
+          <button id="btn-retry" type="button" class="w-full py-3 rounded-xl bg-gradient-to-r from-[#137A7F] via-[#39C5BB] to-cyan-400 hover:brightness-110 active:scale-[0.98] text-slate-950 font-black text-sm sm:text-base shadow-lg transition cursor-pointer">
+            もう一度リフティング（Enter / R）
+          </button>
+        </div>
+      </div>
+
+      <!-- タッチ＆スクリーン操作ボタン -->
+      <div id="touch-pad" class="pointer-events-none absolute inset-x-3 bottom-3 sm:inset-x-5 sm:bottom-4 z-20 flex items-end justify-between">
+        <div class="pointer-events-auto flex items-center gap-2 sm:gap-2.5">
+          <button id="btn-left" type="button" aria-label="左へ移動" class="ctrl-btn w-13 h-13 sm:w-14 sm:h-14 w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-teal-100">
+            ←
+          </button>
+          <button id="btn-right" type="button" aria-label="右へ移動" class="ctrl-btn w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-teal-100">
+            →
+          </button>
+        </div>
+
+        <div class="pointer-events-auto flex items-center gap-2 sm:gap-2.5">
+          <button id="btn-high-lift" type="button" aria-label="ハイ・ヘッドリフト" class="ctrl-btn ctrl-btn-high px-3.5 h-14 rounded-2xl flex flex-col items-center justify-center text-xs font-black text-pink-200">
+            <span>HEAD / HI</span>
+            <span class="text-[9px] text-pink-300/80">Shift / X</span>
+          </button>
+          <button id="btn-lift" type="button" aria-label="リフト・キック" class="ctrl-btn px-4 h-14 sm:h-16 rounded-2xl flex flex-col items-center justify-center text-sm font-black text-[#99f6e4]">
+            <span>LIFT</span>
+            <span class="text-[9px] text-teal-200/80">Space / Z</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // =========================================================================
+      // 1. Web Audio API シンセサイザ（外部音声ファイルなし・安全フォールバック）
+      // =========================================================================
+      class SoundSynth {
+        constructor() {
+          this.ctx = null;
+          this.muted = false;
+        }
+
+        unlock() {
+          try {
+            if (!this.ctx) {
+              const AudioCtx = window.AudioContext || window.webkitAudioContext;
+              if (AudioCtx) {
+                this.ctx = new AudioCtx();
+              }
+            }
+            if (this.ctx && this.ctx.state === 'suspended') {
+              this.ctx.resume().catch(() => {});
+            }
+          } catch (_) {
+            // 音声非対応でもゲーム続行
+          }
+        }
+
+        setMuted(val) {
+          this.muted = !!val;
+        }
+
+        // メジャーペンタトニック系の音階をコンボに合わせて上昇させる
+        scaleFreq(combo, offset = 0) {
+          const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51];
+          const idx = Math.max(0, (combo + offset) % pentatonic.length);
+          const octaveBoost = Math.floor((combo + offset) / pentatonic.length) * 0.5;
+          return pentatonic[idx] * (1 + octaveBoost * 0.25);
+        }
+
+        playLift(combo, tier = 'NORMAL', isHigh = false) {
+          if (this.muted) return;
+          this.unlock();
+          if (!this.ctx) return;
+
+          try {
+            const now = this.ctx.currentTime;
+
+            // ボールの蹴り上げ／弾き低音
+            const thump = this.ctx.createOscillator();
+            const thumpGain = this.ctx.createGain();
+            thump.type = 'sine';
+            thump.frequency.setValueAtTime(isHigh ? 195 : 155, now);
+            thump.frequency.exponentialRampToValueAtTime(58, now + 0.11);
+            thumpGain.gain.setValueAtTime(0.18, now);
+            thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            thump.connect(thumpGain).connect(this.ctx.destination);
+            thump.start(now);
+            thump.stop(now + 0.12);
+
+            // ミクらしい軽快なシンセ音
+            const note = this.ctx.createOscillator();
+            const noteGain = this.ctx.createGain();
+            note.type = isHigh ? 'triangle' : 'sine';
+            const baseFreq = this.scaleFreq(combo, isHigh ? 2 : 0);
+            note.frequency.setValueAtTime(baseFreq, now);
+            note.frequency.exponentialRampToValueAtTime(baseFreq * (isHigh ? 1.25 : 1.06), now + 0.13);
+            noteGain.gain.setValueAtTime(0.11, now);
+            noteGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+            note.connect(noteGain).connect(this.ctx.destination);
+            note.start(now);
+            note.stop(now + 0.14);
+
+            // スイートスポット（GREAT / PERFECT）追加チャイム
+            if (tier === 'GREAT' || tier === 'PERFECT') {
+              const chime = this.ctx.createOscillator();
+              const chimeGain = this.ctx.createGain();
+              chime.type = 'triangle';
+              const chimeFreq = baseFreq * (tier === 'PERFECT' ? 1.5 : 1.25);
+              chime.frequency.setValueAtTime(chimeFreq, now + 0.03);
+              chimeGain.gain.setValueAtTime(0.09, now + 0.03);
+              chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+              chime.connect(chimeGain).connect(this.ctx.destination);
+              chime.start(now + 0.03);
+              chime.stop(now + 0.18);
+            }
+          } catch (_) {}
+        }
+
+        playLeekBonus() {
+          if (this.muted) return;
+          this.unlock();
+          if (!this.ctx) return;
+
+          try {
+            const now = this.ctx.currentTime;
+            const arp = [659.25, 783.99, 987.77, 1318.51];
+            arp.forEach((freq, i) => {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = 'triangle';
+              const t = now + i * 0.055;
+              osc.frequency.setValueAtTime(freq, t);
+              gain.gain.setValueAtTime(0.11, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+              osc.connect(gain).connect(this.ctx.destination);
+              osc.start(t);
+              osc.stop(t + 0.16);
+            });
+          } catch (_) {}
+        }
+
+        playMiss() {
+          if (this.muted) return;
+          this.unlock();
+          if (!this.ctx) return;
+
+          try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(280, now);
+            osc.frequency.exponentialRampToValueAtTime(82, now + 0.36);
+            gain.gain.setValueAtTime(0.14, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+            osc.connect(gain).connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.38);
+          } catch (_) {}
+        }
+      }
+
+      // =========================================================================
+      // 2. 定数・ローカルストレージ管理
+      // =========================================================================
+      const VIEW_H = 640;
+      const PITCH_Y = 548;
+      const GRAVITY = 1060;
+      const BEST_SCORE_KEY = 'miku_virtual_lifting_best_v1';
+
+      const synth = new SoundSynth();
+      const canvas = document.getElementById('liftingCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const ui = {
+        lifts: document.getElementById('hud-lifts'),
+        best: document.getElementById('hud-best'),
+        combo: document.getElementById('hud-combo'),
+        score: document.getElementById('hud-score'),
+        feverLabel: document.getElementById('fever-label'),
+        multLabel: document.getElementById('mult-label'),
+        feverBar: document.getElementById('fever-bar'),
+        btnMute: document.getElementById('btn-mute'),
+        btnQuickReset: document.getElementById('btn-quick-reset'),
+        startOverlay: document.getElementById('overlay-start'),
+        overOverlay: document.getElementById('overlay-gameover'),
+        btnStart: document.getElementById('btn-start'),
+        btnRetry: document.getElementById('btn-retry'),
+        overMessage: document.getElementById('over-message'),
+        overLifts: document.getElementById('over-lifts'),
+        overMaxCombo: document.getElementById('over-maxcombo'),
+        overScore: document.getElementById('over-score'),
+        overBest: document.getElementById('over-best'),
+      };
+
+      function loadBestScore() {
+        try {
+          const saved = localStorage.getItem(BEST_SCORE_KEY);
+          const n = parseInt(saved, 10);
+          return Number.isFinite(n) && n >= 0 ? n : 0;
+        } catch (_) {
+          return 0;
+        }
+      }
+
+      function saveBestScore(val) {
+        try {
+          localStorage.setItem(BEST_SCORE_KEY, String(val));
+        } catch (_) {}
+      }
+
+      // =========================================================================
+      // 3. ゲーム状態・エンティティ
+      // =========================================================================
+      let logicalW = 1040;
+
+      const game = {
+        mode: 'start', // 'start' | 'playing' | 'gameover'
+        lifts: 0,
+        combo: 0,
+        maxCombo: 0,
+        score: 0,
+        bestScore: loadBestScore(),
+        fever: 0, // 0 〜 100
+        feverActiveTimer: 0,
+        time: 0,
+        bpmPhase: 0,
+        shakeTimer: 0,
+        shakeIntensity: 0,
+      };
+
+      const miku = {
+        x: 520,
+        y: PITCH_Y,
+        vx: 0,
+        speed: 440,
+        facing: 1,
+        pose: 'idle', // 'idle' | 'foot' | 'knee' | 'header' | 'celebrate' | 'miss'
+        poseTimer: 0,
+        stepPhase: 0,
+        // ツインテール物理用ノード（左右）
+        tailL: { angle: 0.22, vAngle: 0 },
+        tailR: { angle: -0.22, vAngle: 0 },
+      };
+
+      const ball = {
+        x: 520,
+        y: 230,
+        vx: 45,
+        vy: 0,
+        r: 23,
+        rot: 0,
+        vRot: 2.2,
+        lastLiftType: 'FOOT',
+      };
+
+      let leekBonus = null; // 空中に出現するネギボーナスアイテム
+      let leekSpawnCooldown = 5.5;
+      let particles = [];
+      let popups = [];
+      let shockwaves = [];
+
+      const input = {
+        left: false,
+        right: false,
+        pointerTargetX: null,
+        pointerActive: false,
+      };
+
+      // =========================================================================
+      // 4. レスポンシブCanvasリサイズ
+      // =========================================================================
+      function handleResize() {
+        const box = document.getElementById('canvas-box');
+        const rect = box.getBoundingClientRect();
+        const cw = Math.max(320, rect.width);
+        const ch = Math.max(240, rect.height);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.floor(cw * dpr);
+        canvas.height = Math.floor(ch * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const scale = ch / VIEW_H;
+        logicalW = Math.max(460, Math.min(1320, cw / scale));
+
+        // 画面幅変更時にミクとボールが画面外へ出ないように補正
+        miku.x = Math.max(65, Math.min(logicalW - 65, miku.x));
+        ball.x = Math.max(ball.r + 16, Math.min(logicalW - ball.r - 16, ball.x));
+      }
+
+      window.addEventListener('resize', handleResize);
+      handleResize();
+
+      // =========================================================================
+      // 5. ゲーム開始・リセット・終了
+      // =========================================================================
+      function getMultiplier() {
+        const comboMult = 1 + Math.min(2.5, Math.floor(game.combo / 5) * 0.25);
+        const feverMult = game.feverActiveTimer > 0 ? 1.5 : 1.0;
+        return Number((comboMult * feverMult).toFixed(2));
+      }
+
+      function syncHUD() {
+        ui.lifts.textContent = String(game.lifts);
+        ui.best.textContent = String(game.bestScore);
+        ui.combo.textContent = String(game.combo);
+        ui.score.textContent = String(game.score);
+
+        const mult = getMultiplier();
+        ui.multLabel.textContent = `x${mult.toFixed(2)}`;
+        if (game.feverActiveTimer > 0) {
+          ui.feverLabel.textContent = '★ FEVER TIME!!';
+          ui.feverLabel.className = 'text-pink-300 font-black animate-pulse';
+          const pct = Math.max(0, Math.min(100, (game.feverActiveTimer / 7.0) * 100));
+          ui.feverBar.style.width = `${pct.toFixed(1)}%`;
+        } else {
+          ui.feverLabel.textContent = 'FEVER GAUGE';
+          ui.feverLabel.className = 'text-teal-200';
+          ui.feverBar.style.width = `${Math.max(0, Math.min(100, game.fever)).toFixed(1)}%`;
+        }
+      }
+
+      function startGame() {
+        synth.unlock();
+        game.mode = 'playing';
+        game.lifts = 0;
+        game.combo = 0;
+        game.maxCombo = 0;
+        game.score = 0;
+        game.fever = 0;
+        game.feverActiveTimer = 0;
+        game.shakeTimer = 0;
+
+        miku.x = logicalW * 0.5;
+        miku.vx = 0;
+        miku.pose = 'idle';
+        miku.poseTimer = 0;
+        miku.tailL.angle = 0.24;
+        miku.tailR.angle = -0.24;
+
+        ball.x = miku.x + 12;
+        ball.y = 210;
+        ball.vx = (Math.random() < 0.5 ? -1 : 1) * 65;
+        ball.vy = 60;
+        ball.rot = 0;
+        ball.vRot = 2.4;
+        ball.lastLiftType = 'FOOT';
+
+        leekBonus = null;
+        leekSpawnCooldown = 4.2;
+        particles = [];
+        popups = [];
+        shockwaves = [];
+
+        ui.startOverlay.classList.add('hidden');
+        ui.overOverlay.classList.add('hidden');
+
+        addPopup('START!', miku.x, 165, '#39C5BB', 20);
+        syncHUD();
+      }
+
+      function triggerBallMiss() {
+        if (game.mode !== 'playing') return;
+        game.mode = 'gameover';
+        miku.pose = 'miss';
+        miku.poseTimer = 1.2;
+        game.shakeTimer = 0.28;
+        game.shakeIntensity = 7;
+
+        synth.playMiss();
+        spawnBurst(ball.x, PITCH_Y - 4, '#fda4af', 22, 230);
+        shockwaves.push({ x: ball.x, y: PITCH_Y, r: 8, maxR: 72, color: '#f43f5e', life: 0.4, maxLife: 0.4 });
+
+        if (game.score > game.bestScore) {
+          game.bestScore = game.score;
+          saveBestScore(game.bestScore);
+        }
+
+        ui.overLifts.textContent = `${game.lifts} 回`;
+        ui.overMaxCombo.textContent = `${game.maxCombo}`;
+        ui.overScore.textContent = `${game.score}`;
+        ui.overBest.textContent = `${game.bestScore}`;
+        ui.overMessage.textContent =
+          game.lifts >= 15
+            ? 'すごい連続リフティング！バーチャルステージが盛り上がりました！'
+            : 'ボールがピッチに触れました。スイートスポットを狙って連続コンボをつなごう！';
+
+        syncHUD();
+        ui.overOverlay.classList.remove('hidden');
+      }
+
+      // =========================================================================
+      // 6. リフトアクション（通常リフト / ハイ・ヘッドリフト）
+      // =========================================================================
+      function performLift(isHighMode) {
+        synth.unlock();
+        if (game.mode === 'start') {
+          startGame();
+          return;
+        }
+        if (game.mode !== 'playing') return;
+
+        // ポインター追従中はクリック/タップ位置へ少しステップ
+        if (input.pointerTargetX !== null) {
+          const dx = input.pointerTargetX - miku.x;
+          miku.facing = dx >= 0 ? 1 : -1;
+        }
+
+        const ballCenterX = ball.x;
+        const ballBottomY = ball.y + ball.r;
+
+        // ボールの高さと水平距離からリフト判定ゾーンを確認
+        const horizDist = Math.abs(ballCenterX - miku.x);
+        const reachX = isHighMode ? 84 : 78;
+
+        // ミクの頭上（ヘッダーゾーン）〜足元（フット・ニーゾーン）までのリフト有効範囲
+        const inVerticalZone = ballBottomY >= PITCH_Y - 155 && ballBottomY <= PITCH_Y + 18;
+
+        if (inVerticalZone && horizDist <= reachX) {
+          // リフトの種類（HEAD / KNEE / FOOT）をボールの高さと入力モードから決定
+          let liftType = 'FOOT';
+          let poseName = 'foot';
+          if (isHighMode || ballBottomY < PITCH_Y - 96) {
+            liftType = 'HEAD';
+            poseName = 'header';
+          } else if (ballBottomY < PITCH_Y - 52) {
+            liftType = 'KNEE';
+            poseName = 'knee';
+          }
+
+          // スイートスポット判定（ミクの中心に近いほど高評価）
+          const ratio = horizDist / reachX;
+          let tier = 'NICE';
+          let basePts = 100;
+          let popupColor = '#99f6e4';
+          let upwardVel = isHighMode ? -680 : -565;
+
+          if (ratio <= 0.34) {
+            tier = 'PERFECT';
+            basePts = 220;
+            popupColor = '#fde047';
+            upwardVel = isHighMode ? -710 : -595;
+          } else if (ratio <= 0.65) {
+            tier = 'GREAT';
+            basePts = 150;
+            popupColor = '#39C5BB';
+            upwardVel = isHighMode ? -695 : -580;
+          }
+
+          // 連続で違う技をつなぐとバリエーションボーナス
+          let varietyBonus = 0;
+          if (liftType !== ball.lastLiftType && game.lifts > 0) {
+            varietyBonus = 60;
+          }
+          ball.lastLiftType = liftType;
+
+          // ボールの跳ね返り速度と横方向コントロール
+          ball.vy = upwardVel;
+          const offsetNorm = Math.max(-1, Math.min(1, (ballCenterX - miku.x) / reachX));
+          let dirInput = 0;
+          if (input.left) dirInput -= 1;
+          if (input.right) dirInput += 1;
+
+          if (dirInput !== 0) {
+            ball.vx = dirInput * 165 + offsetNorm * 95;
+            miku.facing = dirInput;
+          } else {
+            // 中央付近で打つと中央へ戻りやすく、端で打つとやや外側へコントロール可能
+            ball.vx = offsetNorm * 195;
+            if (Math.abs(offsetNorm) > 0.15) {
+              miku.facing = offsetNorm > 0 ? 1 : -1;
+            }
+          }
+
+          ball.vRot = (ball.vx * 0.025) + (miku.facing * 3.5);
+
+          // カウント・コンボ・フィーバー更新
+          game.lifts += 1;
+          game.combo += 1;
+          if (game.combo > game.maxCombo) game.maxCombo = game.combo;
+
+          game.fever = Math.min(100, game.fever + (tier === 'PERFECT' ? 16 : tier === 'GREAT' ? 12 : 8));
+          if (game.fever >= 100 && game.feverActiveTimer <= 0) {
+            game.fever = 0;
+            game.feverActiveTimer = 7.0;
+            synth.playLeekBonus();
+            addPopup('FEVER TIME! x1.5', miku.x, ball.y - 45, '#f472b6', 20);
+          }
+
+          const mult = getMultiplier();
+          const earned = Math.round((basePts + varietyBonus) * mult);
+          game.score += earned;
+          if (game.score > game.bestScore) {
+            game.bestScore = game.score;
+            saveBestScore(game.bestScore);
+          }
+
+          miku.pose = poseName;
+          miku.poseTimer = 0.24;
+          // ツインテールに蹴り上げの風圧を与える
+          miku.tailL.vAngle += 2.6 * miku.facing;
+          miku.tailR.vAngle += 2.6 * miku.facing;
+
+          synth.playLift(game.combo, tier, liftType === 'HEAD');
+
+          const label =
+            varietyBonus > 0
+              ? `${tier}! ${liftType} +${earned}`
+              : `${tier}! +${earned}`;
+          addPopup(label, ball.x, ball.y - 24, popupColor, tier === 'PERFECT' ? 18 : 15);
+          spawnBurst(ball.x, ball.y + ball.r * 0.6, popupColor, tier === 'PERFECT' ? 14 : 9, 165);
+          shockwaves.push({
+            x: ball.x,
+            y: ball.y + ball.r * 0.5,
+            r: 6,
+            maxR: tier === 'PERFECT' ? 54 : 36,
+            color: popupColor,
+            life: 0.26,
+            maxLife: 0.26,
+          });
+
+          syncHUD();
+        } else {
+          // 空振り時も軽いステップポーズで手応えを出す
+          miku.pose = isHighMode ? 'header' : 'foot';
+          miku.poseTimer = 0.14;
+        }
+      }
+
+      // =========================================================================
+      // 7. 入力イベント（キーボード・ポインター・タッチボタン）
+      // =========================================================================
+      window.addEventListener('keydown', (e) => {
+        const code = e.code;
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(code)) {
+          e.preventDefault();
+        }
+        synth.unlock();
+
+        if (code === 'ArrowLeft' || code === 'KeyA') {
+          input.left = true;
+          input.pointerTargetX = null;
+        }
+        if (code === 'ArrowRight' || code === 'KeyD') {
+          input.right = true;
+          input.pointerTargetX = null;
+        }
+        if (code === 'Space' || code === 'KeyZ' || code === 'KeyJ' || code === 'KeyW' || code === 'ArrowUp') {
+          if (!e.repeat) performLift(false);
+        }
+        if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'KeyX' || code === 'KeyK') {
+          if (!e.repeat) performLift(true);
+        }
+        if (code === 'Enter') {
+          if (game.mode === 'start' || game.mode === 'gameover') {
+            startGame();
+          }
+        }
+        if (code === 'KeyR') {
+          startGame();
+        }
+        if (code === 'KeyM') {
+          toggleMute();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const code = e.code;
+        if (code === 'ArrowLeft' || code === 'KeyA') input.left = false;
+        if (code === 'ArrowRight' || code === 'KeyD') input.right = false;
+      });
+
+      function clientToLogicalX(clientX) {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return logicalW * 0.5;
+        const scale = rect.height / VIEW_H;
+        const relX = (clientX - rect.left) / scale;
+        return Math.max(60, Math.min(logicalW - 60, relX));
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        synth.unlock();
+        if (game.mode !== 'playing') return;
+        input.pointerActive = true;
+        input.pointerTargetX = clientToLogicalX(e.clientX);
+        performLift(e.shiftKey);
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!input.pointerActive || game.mode !== 'playing') return;
+        input.pointerTargetX = clientToLogicalX(e.clientX);
+      });
+
+      window.addEventListener('pointerup', () => {
+        input.pointerActive = false;
+      });
+
+      function bindHoldButton(el, onDown, onUp) {
+        if (!el) return;
+        const down = (ev) => {
+          ev.preventDefault();
+          el.classList.add('active');
+          onDown();
+        };
+        const up = (ev) => {
+          ev.preventDefault();
+          el.classList.remove('active');
+          if (onUp) onUp();
+        };
+        el.addEventListener('touchstart', down, { passive: false });
+        el.addEventListener('touchend', up, { passive: false });
+        el.addEventListener('touchcancel', up, { passive: false });
+        el.addEventListener('mousedown', down);
+        window.addEventListener('mouseup', () => {
+          el.classList.remove('active');
+          if (onUp) onUp();
+        });
+      }
+
+      bindHoldButton(
+        document.getElementById('btn-left'),
+        () => { input.left = true; input.pointerTargetX = null; },
+        () => { input.left = false; }
+      );
+      bindHoldButton(
+        document.getElementById('btn-right'),
+        () => { input.right = true; input.pointerTargetX = null; },
+        () => { input.right = false; }
+      );
+      bindHoldButton(
+        document.getElementById('btn-lift'),
+        () => performLift(false),
+        null
+      );
+      bindHoldButton(
+        document.getElementById('btn-high-lift'),
+        () => performLift(true),
+        null
+      );
+
+      function toggleMute() {
+        synth.setMuted(!synth.muted);
+        ui.btnMute.textContent = synth.muted ? '♪ 音: OFF' : '♪ 音: ON';
+      }
+
+      ui.btnMute.addEventListener('click', toggleMute);
+      ui.btnQuickReset.addEventListener('click', startGame);
+      ui.btnStart.addEventListener('click', startGame);
+      ui.btnRetry.addEventListener('click', startGame);
+
+      // =========================================================================
+      // 8. エフェクト・ポップアップ管理
+      // =========================================================================
+      function addPopup(text, x, y, color, size = 15) {
+        popups.push({
+          text,
+          x,
+          y,
+          vy: -58,
+          color,
+          size,
+          life: 0.78,
+          maxLife: 0.78,
+        });
+      }
+
+      function spawnBurst(x, y, color, count, maxSpeed) {
+        for (let i = 0; i < count; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 35 + Math.random() * maxSpeed;
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd - 45,
+            size: 3 + Math.random() * 4.5,
+            color,
+            life: 0.35 + Math.random() * 0.35,
+            maxLife: 0.7,
+          });
+        }
+      }
+
+      // =========================================================================
+      // 9. メイン更新ループ（60fps delta-time clamp）
+      // =========================================================================
+      function update(dt) {
+        game.time += dt;
+        // 約128 BPM相当のステージビート位相
+        game.bpmPhase += dt * (128 / 60) * Math.PI * 2;
+
+        if (game.shakeTimer > 0) {
+          game.shakeTimer = Math.max(0, game.shakeTimer - dt);
+        }
+
+        if (game.feverActiveTimer > 0) {
+          game.feverActiveTimer = Math.max(0, game.feverActiveTimer - dt);
+          if (game.feverActiveTimer === 0) {
+            syncHUD();
+          }
+        }
+
+        // ポップアップ・パーティクル・衝撃波更新
+        for (let i = popups.length - 1; i >= 0; i--) {
+          const p = popups[i];
+          p.y += p.vy * dt;
+          p.vy *= 0.94;
+          p.life -= dt;
+          if (p.life <= 0) popups.splice(i, 1);
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const pt = particles[i];
+          pt.x += pt.vx * dt;
+          pt.y += pt.vy * dt;
+          pt.vy += 420 * dt;
+          pt.life -= dt;
+          if (pt.life <= 0) particles.splice(i, 1);
+        }
+
+        for (let i = shockwaves.length - 1; i >= 0; i--) {
+          const sw = shockwaves[i];
+          sw.r += (sw.maxR - sw.r) * Math.min(1, dt * 14);
+          sw.life -= dt;
+          if (sw.life <= 0) shockwaves.splice(i, 1);
+        }
+
+        if (game.mode !== 'playing') {
+          updateTwinTails(dt, 0);
+          return;
+        }
+
+        // ミク移動処理
+        let moveDir = 0;
+        if (input.left) moveDir -= 1;
+        if (input.right) moveDir += 1;
+
+        if (moveDir !== 0) {
+          miku.vx = moveDir * miku.speed;
+          miku.facing = moveDir;
+          miku.stepPhase += dt * 14;
+        } else if (input.pointerTargetX !== null) {
+          const diff = input.pointerTargetX - miku.x;
+          if (Math.abs(diff) > 4) {
+            miku.vx = Math.max(-miku.speed, Math.min(miku.speed, diff * 11));
+            miku.facing = diff >= 0 ? 1 : -1;
+            miku.stepPhase += dt * 12;
+          } else {
+            miku.vx = 0;
+            miku.stepPhase = 0;
+          }
+        } else {
+          miku.vx *= Math.pow(0.001, dt);
+          if (Math.abs(miku.vx) < 6) miku.vx = 0;
+          miku.stepPhase = 0;
+        }
+
+        miku.x += miku.vx * dt;
+        miku.x = Math.max(65, Math.min(logicalW - 65, miku.x));
+
+        if (miku.poseTimer > 0) {
+          miku.poseTimer -= dt;
+          if (miku.poseTimer <= 0) {
+            miku.pose = 'idle';
+          }
+        }
+
+        updateTwinTails(dt, miku.vx);
+
+        // ボール物理更新
+        ball.vy += GRAVITY * dt;
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+        ball.rot += ball.vRot * dt;
+
+        // サイドライン（左右の壁）でのソフトバウンド
+        const minX = ball.r + 18;
+        const maxX = logicalW - ball.r - 18;
+        if (ball.x < minX) {
+          ball.x = minX;
+          ball.vx = Math.abs(ball.vx) * 0.78;
+          ball.vRot = -ball.vRot;
+        } else if (ball.x > maxX) {
+          ball.x = maxX;
+          ball.vx = -Math.abs(ball.vx) * 0.78;
+          ball.vRot = -ball.vRot;
+        }
+
+        // 天井制限
+        if (ball.y < ball.r + 48) {
+          ball.y = ball.r + 48;
+          if (ball.vy < 0) ball.vy *= -0.45;
+        }
+
+        // ネギボーナス出現＆取得
+        updateLeekBonus(dt);
+
+        // 地面着地判定（ピッチに触れたらリフティング終了）
+        if (ball.y + ball.r >= PITCH_Y) {
+          ball.y = PITCH_Y - ball.r;
+          triggerBallMiss();
+        }
+      }
+
+      function updateTwinTails(dt, vx) {
+        // バネ・減衰モデルでミクのツインテールを揺らす
+        const wind = Math.sin(game.time * 3.1) * 0.06 - vx * 0.00055;
+        const targetL = 0.24 + wind;
+        const targetR = -0.24 + wind;
+
+        const stiffness = 48;
+        const damping = 7.5;
+
+        const accL = (targetL - miku.tailL.angle) * stiffness - miku.tailL.vAngle * damping;
+        miku.tailL.vAngle += accL * dt;
+        miku.tailL.angle += miku.tailL.vAngle * dt;
+
+        const accR = (targetR - miku.tailR.angle) * stiffness - miku.tailR.vAngle * damping;
+        miku.tailR.vAngle += accR * dt;
+        miku.tailR.angle += miku.tailR.vAngle * dt;
+      }
+
+      function updateLeekBonus(dt) {
+        if (!leekBonus) {
+          leekSpawnCooldown -= dt;
+          if (leekSpawnCooldown <= 0 && game.lifts >= 2) {
+            leekBonus = {
+              x: 140 + Math.random() * Math.max(120, logicalW - 280),
+              y: 230 + Math.random() * 140,
+              r: 22,
+              phase: Math.random() * Math.PI * 2,
+              life: 6.5,
+            };
+            leekSpawnCooldown = 7.5;
+          }
+          return;
+        }
+
+        leekBonus.life -= dt;
+        leekBonus.phase += dt * 4.2;
+        const lx = leekBonus.x + Math.cos(leekBonus.phase * 0.7) * 18;
+        const ly = leekBonus.y + Math.sin(leekBonus.phase) * 12;
+
+        // ボールがネギに触れたらボーナス獲得！
+        const dist = Math.hypot(ball.x - lx, ball.y - ly);
+        if (dist <= ball.r + leekBonus.r + 6) {
+          const pts = Math.round(450 * getMultiplier());
+          game.score += pts;
+          game.fever = Math.min(100, game.fever + 25);
+          if (game.score > game.bestScore) {
+            game.bestScore = game.score;
+            saveBestScore(game.bestScore);
+          }
+          synth.playLeekBonus();
+          addPopup(`ネギBONUS! +${pts}`, lx, ly - 16, '#86efac', 17);
+          spawnBurst(lx, ly, '#4ade80', 16, 180);
+          leekBonus = null;
+          syncHUD();
+          return;
+        }
+
+        if (leekBonus.life <= 0) {
+          leekBonus = null;
+        }
+      }
+
+      // =========================================================================
+      // 10. 描画処理（バーチャルステージ・初音ミク・サッカーボール・エフェクト）
+      // =========================================================================
+      function render() {
+        const box = document.getElementById('canvas-box');
+        const rect = box.getBoundingClientRect();
+        const cw = rect.width || logicalW;
+        const ch = rect.height || VIEW_H;
+        const scale = ch / VIEW_H;
+
+        ctx.save();
+        ctx.scale(scale, scale);
+
+        if (game.shakeTimer > 0) {
+          const sx = (Math.random() - 0.5) * 2 * game.shakeIntensity;
+          const sy = (Math.random() - 0.5) * 2 * game.shakeIntensity;
+          ctx.translate(sx, sy);
+        }
+
+        drawVirtualStage();
+        drawBallShadowAndGuide();
+        drawMiku();
+        drawLeekBonus();
+        drawSoccerBall();
+        drawEffects();
+
+        ctx.restore();
+      }
+
+      function drawVirtualStage() {
+        // 背景グラデーション（ブルーグリーン＆ディープサイバー）
+        const bg = ctx.createLinearGradient(0, 0, 0, PITCH_Y);
+        bg.addColorStop(0, '#071c26');
+        bg.addColorStop(0.55, '#0d3644');
+        bg.addColorStop(1, '#124e59');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, logicalW, PITCH_Y);
+
+        // ビートに合わせて脈動するステージライトビーム
+        const pulse = 0.5 + 0.5 * Math.sin(game.bpmPhase);
+        const beamCount = 5;
+        for (let i = 0; i < beamCount; i++) {
+          const bx = ((i + 0.5) / beamCount) * logicalW;
+          const grad = ctx.createLinearGradient(bx, 0, bx + (i - 2) * 36, PITCH_Y);
+          const alpha = (game.feverActiveTimer > 0 ? 0.14 : 0.07) + pulse * 0.04;
+          const col = i % 2 === 0 ? `rgba(57, 197, 187, ${alpha})` : `rgba(244, 114, 182, ${alpha * 0.85})`;
+          grad.addColorStop(0, col);
+          grad.addColorStop(1, 'rgba(57, 197, 187, 0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(bx - 22, 0);
+          ctx.lineTo(bx + 22, 0);
+          ctx.lineTo(bx + (i - 2) * 36 + 115, PITCH_Y);
+          ctx.lineTo(bx + (i - 2) * 36 - 115, PITCH_Y);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // 背面のバーチャルグリッド・サウンドウェーブ
+        ctx.save();
+        ctx.strokeStyle = 'rgba(57, 197, 187, 0.13)';
+        ctx.lineWidth = 1;
+        const gridStep = 64;
+        for (let gx = 0; gx <= logicalW; gx += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(gx, 0);
+          ctx.lineTo(gx, PITCH_Y);
+          ctx.stroke();
+        }
+        for (let gy = 80; gy < PITCH_Y; gy += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(0, gy);
+          ctx.lineTo(logicalW, gy);
+          ctx.stroke();
+        }
+
+        // 浮遊する音符アクセント
+        ctx.fillStyle = 'rgba(153, 246, 228, 0.22)';
+        ctx.font = 'bold 18px sans-serif';
+        for (let n = 0; n < 4; n++) {
+          const nx = ((n + 0.5) / 4) * logicalW + Math.sin(game.time * 1.4 + n * 2) * 26;
+          const ny = 145 + Math.cos(game.time * 1.9 + n * 1.5) * 22;
+          ctx.fillText(n % 2 === 0 ? '♪' : '♫', nx, ny);
+        }
+        ctx.restore();
+
+        // バーチャルピッチ（芝生・ライン・ネオンエッジ）
+        const pitchGrad = ctx.createLinearGradient(0, PITCH_Y, 0, VIEW_H);
+        pitchGrad.addColorStop(0, '#0f5c4e');
+        pitchGrad.addColorStop(0.28, '#0b3d36');
+        pitchGrad.addColorStop(1, '#061a19');
+        ctx.fillStyle = pitchGrad;
+        ctx.fillRect(0, PITCH_Y, logicalW, VIEW_H - PITCH_Y);
+
+        // センターサークル＆ピッチライン
+        ctx.save();
+        ctx.strokeStyle = 'rgba(153, 246, 228, 0.35)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(24, PITCH_Y + 8);
+        ctx.lineTo(logicalW - 24, PITCH_Y + 8);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.ellipse(logicalW * 0.5, PITCH_Y + 46, 95, 22, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // ピッチ上端のミクカラーライン
+        ctx.strokeStyle = '#39C5BB';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(0, PITCH_Y);
+        ctx.lineTo(logicalW, PITCH_Y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawBallShadowAndGuide() {
+        // ボール直下のピッチ影（高さに応じてサイズと濃さが変化）
+        const heightRatio = Math.max(0, Math.min(1, (PITCH_Y - ball.y) / (PITCH_Y - 100)));
+        const shadowW = ball.r * (1.55 - heightRatio * 0.75);
+        const shadowH = 7 * (1.2 - heightRatio * 0.55);
+
+        ctx.save();
+        ctx.fillStyle = `rgba(2, 12, 16, ${(0.58 - heightRatio * 0.34).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.ellipse(ball.x, PITCH_Y + 4, shadowW, shadowH, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // プレイ中はミクの足元/頭上にリフト目安インジケータを表示
+        if (game.mode === 'playing') {
+          ctx.strokeStyle = 'rgba(57, 197, 187, 0.24)';
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(miku.x, PITCH_Y - 6, 56, 10, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawMiku() {
+        const bounce = game.mode === 'playing' ? Math.abs(Math.sin(game.bpmPhase * 0.5)) * 3.5 : 0;
+        const step = Math.sin(miku.stepPhase) * 7;
+
+        ctx.save();
+        ctx.translate(miku.x, miku.y - bounce);
+
+        // 背面：ブルーグリーンのロングツインテール（物理揺れ）
+        drawTwinTail(-14, -92, miku.tailL.angle, -1);
+        drawTwinTail(14, -92, miku.tailR.angle, 1);
+
+        ctx.save();
+        ctx.scale(miku.facing, 1);
+
+        // 脚・ブーツ
+        const isFootLift = miku.pose === 'foot';
+        const isKneeLift = miku.pose === 'knee';
+        const isHeader = miku.pose === 'header';
+
+        // 後ろ脚
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-10 - step * 0.4, -30, 8, 24);
+        ctx.fillStyle = '#18181b';
+        ctx.fillRect(-12 - step * 0.4, -8, 11, 8);
+        ctx.fillStyle = '#39C5BB';
+        ctx.fillRect(-12 - step * 0.4, -4, 11, 3);
+
+        // 前脚（フットリフト時は前へ蹴り上げ、ニーリフト時は膝を上げる）
+        ctx.save();
+        if (isFootLift) {
+          ctx.translate(4, -28);
+          ctx.rotate(-0.95);
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(-4, 0, 8, 22);
+          ctx.fillStyle = '#18181b';
+          ctx.fillRect(-5, 19, 12, 8);
+        } else if (isKneeLift) {
+          ctx.translate(4, -28);
+          ctx.rotate(-0.75);
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(-4, 0, 8, 13);
+          ctx.rotate(0.85);
+          ctx.fillRect(-4, 11, 8, 12);
+          ctx.fillStyle = '#18181b';
+          ctx.fillRect(-5, 20, 11, 7);
+        } else {
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(2 + step * 0.4, -30, 8, 24);
+          ctx.fillStyle = '#18181b';
+          ctx.fillRect(1 + step * 0.4, -8, 11, 8);
+          ctx.fillStyle = '#39C5BB';
+          ctx.fillRect(1 + step * 0.4, -4, 11, 3);
+        }
+        ctx.restore();
+
+        // プリーツスカート（ダークスレート＋ブルーグリーン縁取り）
+        ctx.fillStyle = '#16242e';
+        ctx.beginPath();
+        ctx.moveTo(-14, -44);
+        ctx.lineTo(14, -44);
+        ctx.lineTo(20, -26);
+        ctx.lineTo(-20, -26);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#39C5BB';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-19, -27);
+        ctx.lineTo(19, -27);
+        ctx.stroke();
+
+        // トップス（ノースリーブ・ブルーグリーン＆ダーク）
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(-12, -68, 24, 25, 5);
+        ctx.fill();
+
+        ctx.fillStyle = '#39C5BB';
+        ctx.beginPath();
+        ctx.moveTo(-11, -68);
+        ctx.lineTo(11, -68);
+        ctx.lineTo(13, -55);
+        ctx.lineTo(-13, -55);
+        ctx.closePath();
+        ctx.fill();
+
+        // ネクタイ
+        ctx.fillStyle = '#39C5BB';
+        ctx.beginPath();
+        ctx.moveTo(0, -61);
+        ctx.lineTo(4, -46);
+        ctx.lineTo(0, -42);
+        ctx.lineTo(-4, -46);
+        ctx.closePath();
+        ctx.fill();
+
+        // アームカバー＆「01」モチーフ（左腕/肩側）
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-17, -60, 6, 17);
+        ctx.fillStyle = '#f0fdfa';
+        ctx.font = '900 7px Inter, sans-serif';
+        ctx.fillText('01', -17, -46);
+
+        // 腕ポーズ（ヘッダー時は腕を広げてバランス、セレブレーション時は挙手）
+        ctx.strokeStyle = '#fde6d8';
+        ctx.lineWidth = 5.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        if (isHeader || miku.pose === 'celebrate') {
+          ctx.moveTo(10, -64);
+          ctx.lineTo(23, -84);
+        } else {
+          ctx.moveTo(10, -64);
+          ctx.lineTo(20, -52);
+        }
+        ctx.stroke();
+
+        // 頭・顔・ヘッドセット
+        const headLiftY = isHeader ? -4 : 0;
+        ctx.save();
+        ctx.translate(0, headLiftY);
+
+        ctx.fillStyle = '#fde6d8';
+        ctx.beginPath();
+        ctx.arc(1, -83, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 表情（瞳はミクらしいブルーグリーン）
+        if (miku.pose === 'miss') {
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(5, -86);
+          ctx.lineTo(11, -81);
+          ctx.moveTo(11, -86);
+          ctx.lineTo(5, -81);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#0f766e';
+          ctx.beginPath();
+          ctx.ellipse(8, -83, 3.2, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(9.2, -84.8, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 前髪（ダークスレート/チャコール）
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(1, -84, 16, Math.PI * 0.92, Math.PI * 2.12);
+        ctx.lineTo(14, -78);
+        ctx.lineTo(4, -81);
+        ctx.lineTo(-12, -77);
+        ctx.closePath();
+        ctx.fill();
+
+        // ヘッドセット＆髪飾り
+        ctx.fillStyle = '#39C5BB';
+        ctx.beginPath();
+        ctx.roundRect(-16, -90, 7, 13, 3);
+        ctx.fill();
+        ctx.fillStyle = '#f472b6';
+        ctx.beginPath();
+        ctx.arc(-13, -95, 4.2, 0, Math.PI * 2);
+        ctx.arc(13, -95, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+        ctx.restore();
+        ctx.restore();
+      }
+
+      function drawTwinTail(anchorX, anchorY, angle, side) {
+        ctx.save();
+        ctx.translate(anchorX, anchorY);
+        ctx.rotate(angle);
+
+        const grad = ctx.createLinearGradient(0, 0, side * 12, 86);
+        grad.addColorStop(0, '#39C5BB');
+        grad.addColorStop(0.65, '#137A7F');
+        grad.addColorStop(1, '#2dd4bf');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(-6, 0);
+        ctx.quadraticCurveTo(side * 22, 34, side * 10, 86);
+        ctx.lineTo(side * 2, 76);
+        ctx.quadraticCurveTo(side * 8, 38, 6, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function drawSoccerBall() {
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+        ctx.rotate(ball.rot);
+
+        // ボール本体
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 中央の五角形パターン
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = (i * Math.PI * 2) / 5 - Math.PI / 2;
+          const px = Math.cos(a) * 8.2;
+          const py = Math.sin(a) * 8.2;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // 五角形から伸びる縫い目ライン
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1.6;
+        for (let i = 0; i < 5; i++) {
+          const a = (i * Math.PI * 2) / 5 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * 8.2, Math.sin(a) * 8.2);
+          ctx.lineTo(Math.cos(a) * (ball.r - 1.5), Math.sin(a) * (ball.r - 1.5));
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      function drawLeekBonus() {
+        if (!leekBonus) return;
+        const lx = leekBonus.x + Math.cos(leekBonus.phase * 0.7) * 18;
+        const ly = leekBonus.y + Math.sin(leekBonus.phase) * 12;
+
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(-0.45 + Math.sin(leekBonus.phase * 0.8) * 0.15);
+
+        // 光彩リング
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, leekBonus.r + 4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 白い茎部分
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(-16, -4, 18, 8);
+
+        // 緑の葉部分
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.moveTo(2, -4);
+        ctx.lineTo(20, -11);
+        ctx.lineTo(18, -2);
+        ctx.lineTo(22, 3);
+        ctx.lineTo(16, 7);
+        ctx.lineTo(2, 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function drawEffects() {
+        for (const sw of shockwaves) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, sw.life / sw.maxLife);
+          ctx.strokeStyle = sw.color;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.ellipse(sw.x, sw.y, sw.r, sw.r * 0.42, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        for (const pt of particles) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+          ctx.restore();
+        }
+
+        for (const p of popups) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+          ctx.font = `900 ${p.size}px 'Noto Sans JP', sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#041016';
+          ctx.fillText(p.text, p.x + 1.5, p.y + 1.5);
+          ctx.fillStyle = p.color;
+          ctx.fillText(p.text, p.x, p.y);
+          ctx.restore();
+        }
+      }
+
+      // =========================================================================
+      // 11. ループ起動
+      // =========================================================================
+      let lastTime = performance.now();
+
+      function frame(now) {
+        const rawDt = (now - lastTime) / 1000;
+        lastTime = now;
+        const dt = Math.min(0.05, Math.max(0.001, rawDt));
+
+        update(dt);
+        render();
+
+        requestAnimationFrame(frame);
+      }
+
+      syncHUD();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
